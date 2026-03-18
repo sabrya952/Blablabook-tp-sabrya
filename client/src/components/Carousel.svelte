@@ -225,6 +225,10 @@
       width: 35px;
     }
 
+    .navigation-dots {
+      display: none;
+    }
+
     .slides-container {
       gap: 10px;
     }

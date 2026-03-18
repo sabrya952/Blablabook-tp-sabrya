@@ -9,23 +9,27 @@
   // État pour afficher le formulaire d'authentification
   let showAuth = $state(false);
   //Mode d'authentification : login ou register
-  let authMode = $state("login");
-  // Token d'utilisateur stocké localement
-  let token = $state(localStorage.getItem("token"));
+let authMode = $state("login");
+
+  let isLoggedIn = $state(false);
+  $effect(() => {
+    token.subscribe(val => { isLoggedIn = val !== null; });
+  });
+
+import { token, login, logout as logoutStore } from "../stores/auth.js";
   // État pour l'ouverture du menu
   let isMenuOpen = $state(false);
   //Requête de recherche
   let searchQuery = $state("");
 // Callback après succès de connexion
   function handleLoginSuccess(newToken) {
-    token = newToken;
+    login(newToken);
     showAuth = false;
     isMenuOpen = false;
   }
 // Déconnexion de l'utilisateur
   function logout() {
-    localStorage.removeItem("token");
-    token = null;
+    logoutStore();
     isMenuOpen = false;
     window.location.replace("/");
   }
@@ -85,7 +89,7 @@
           </button>
         </div>
 
-        {#if !token}
+{#if !isLoggedIn}
         <!-- Utilisateur non connecté -->
           <a href="/livres" class="link">Catalogue</a>
           <button
@@ -171,7 +175,7 @@
         </button>
       </div>
 
-      {#if !token}
+      {#if !isLoggedIn}
       <!-- Menu mobile utilisateur non connecté -->
         <a
           href="/livres"

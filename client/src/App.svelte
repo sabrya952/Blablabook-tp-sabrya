@@ -12,10 +12,11 @@
   import SearchResult from "./components/views/SearchResult.svelte";
   import Footer from "./components/Footer.svelte";
 // URL utilisée par le router
-  export let url = "";
+  let { url = "" } = $props();
 
-  $: isLoggedIn =
-    typeof window !== "undefined" && localStorage.getItem("token") !== null;
+
+import { token } from "./stores/auth.js";
+let isLoggedIn = $derived($token !== null);
 </script>
 
 <ErrorBoundary>

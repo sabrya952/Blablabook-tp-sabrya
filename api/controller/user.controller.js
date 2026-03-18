@@ -73,8 +73,8 @@ export const userController = {
         });
       }
 
-      // Changement de mot de passe
-      if (password) {
+      // Vérification du mot de passe actuel (une seule fois si nécessaire)
+      if (currentPassword && (password || email)) {
         const validPassword = await argon2.verify(
           user.password,
           currentPassword,
@@ -84,6 +84,10 @@ export const userController = {
             message: "Mot de passe actuel incorrect",
           });
         }
+      }
+
+      // Changement de mot de passe
+      if (password) {
         user.password = await argon2.hash(password);
       }
 
@@ -102,22 +106,6 @@ export const userController = {
 
       // Changement d'email
       if (email && email !== user.email) {
-        if (!currentPassword) {
-          return res.status(StatusCodes.BAD_REQUEST).json({
-            message: "Le mot de passe actuel est requis pour changer l'email",
-          });
-        }
-
-        const validPassword = await argon2.verify(
-          user.password,
-          currentPassword,
-        );
-        if (!validPassword) {
-          return res.status(StatusCodes.UNAUTHORIZED).json({
-            message: "Mot de passe actuel incorrect",
-          });
-        }
-
         const emailExists = await User.findOne({
           where: { email, id: { [Op.ne]: userId } },
         });

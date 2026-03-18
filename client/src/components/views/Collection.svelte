@@ -2,449 +2,226 @@
   import { api } from "../../service/api.service.js";
   import CardBook from "../CardBook.svelte";
 
-  // États Svelte 5
+  // États réactifs
   let books = $state([]);
-  let loading = $state(true);
-  let currentFilter = $state("tous");
-  let toast = $state(null);
-  let toastTimeout = $state(null);
-  let requestVersion = $state(0);
-  let notAuthenticated = $state(false);
+  let loading = $state(false);
+  let error = $state(null);
+  let activeFilter = $state("tous");
+let toast = $state(null);
+import { token } from "../../stores/auth.js";
+let isLoggedIn = $state(false);
+$effect(() => {
+  token.subscribe(val => { isLoggedIn = val !== null; });
+});
 
-  // Liste des filtres
-  const filters = [
-    { value: "tous", label: "Tous" },
-    { value: "à lire", label: "À lire" },
-    { value: "en cours", label: "En cours" },
-    { value: "en pause", label: "En pause" },
-    { value: "lu", label: "Lu" },
-    { value: "abandonné", label: "Abandonné" },
-  ];
+  const STATUSES = ["à lire", "en cours", "lu", "abandonné", "en pause"];
 
-  // Chargement au montage et au changement de filtre
+  // Effet pour vérification connexion et chargement
   $effect(() => {
-    loadCollection();
+    if (isLoggedIn) loadCollection();
   });
 
-  async function loadCollection() {
-    const currentVersion = requestVersion;
 
+  async function loadCollection(status = null) {
+    loading = true;
+    error = null;
     try {
-      loading = true;
-
-      const token = localStorage.getItem("token");
-      if (!token) {
-        notAuthenticated = true;
-        return;
-      }
-
-      const statusParam = currentFilter === "tous" ? null : currentFilter;
-      const data = await api.getCollection(statusParam);
-
-      // Ignorer la réponse si une requête plus récente a été initiée
-      if (requestVersion !== currentVersion) return;
-
-      books = data.books || [];
-    } catch (error) {
-      // Ignorer les erreurs si une requête plus récente a été initiée
-      if (requestVersion !== currentVersion) return;
-
-      if (error.status === 401) {
-        notAuthenticated = true;
-      } else {
-        showToast("Erreur lors du chargement de la collection", "error");
-      }
+      const res = await api.getCollection(status === "tous" ? null : status);
+      books = res.books || [];
+    } catch (e) {
+      error = "Erreur lors du chargement.";
     } finally {
-      // Ignorer si une requête plus récente a été initiée
-      if (requestVersion !== currentVersion) return;
       loading = false;
     }
   }
 
-  function handleFilterChange(filterValue) {
-    requestVersion++; // Incrémenter pour abandonner les requêtes précédentes
-    currentFilter = filterValue;
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  async function handleStatusChange(bookId, newStatus) {
+  async function updateStatus(bookId, newStatus) {
     try {
       await api.updateCollectionStatus(bookId, newStatus);
-
-      // Mise à jour locale
-      const bookIndex = books.findIndex((b) => b.id === bookId);
-      if (bookIndex !== -1) {
-        books[bookIndex].collectStatus = newStatus;
-        books = [...books]; // Trigger reactivity
-      }
-
+      books = books.map(b =>
+        b.id === bookId ? { ...b, collectStatus: newStatus } : b
+      );
       showToast("Statut mis à jour", "success");
-    } catch (error) {
-      showToast("Erreur lors de la mise à jour du statut", "error");
+    } catch (e) {
+      showToast("Erreur lors de la mise à jour", "error");
     }
   }
 
-  async function handleRemove(bookId) {
+  async function removeBook(bookId) {
     try {
       await api.removeFromCollection(bookId);
-
-      // Suppression locale
-      books = books.filter((b) => b.id !== bookId);
-
-      showToast("Livre retiré de la collection", "success");
-    } catch (error) {
+      books = books.filter(b => b.id !== bookId);
+      showToast("Livre retiré", "success");
+    } catch (e) {
       showToast("Erreur lors de la suppression", "error");
     }
   }
 
   function showToast(message, type) {
-    if (toastTimeout) clearTimeout(toastTimeout);
-
     toast = { message, type };
+    setTimeout(() => { toast = null; }, 3000);
+  }
 
-    toastTimeout = setTimeout(() => {
-      toast = null;
-    }, 3000);
+  function setFilter(status) {
+    activeFilter = status;
+    loadCollection(status);
   }
 </script>
 
-<section aria-labelledby="collection-title">
-  <h2 id="collection-title">Ma collection</h2>
+<section class="collection">
+  <h2>Ma collection</h2>
 
-  {#if notAuthenticated}
-    <div class="not-authenticated" role="alert">
-      <svg
-        width="52"
-        height="52"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.4"
-      >
-        <circle cx="12" cy="8" r="4" />
-        <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-        <circle
-          cx="18"
-          cy="5"
-          r="3"
-          fill="white"
-          stroke="currentColor"
-          stroke-width="1.4"
-        />
-        <line x1="16.8" y1="3.8" x2="19.2" y2="6.2" stroke-width="1.6" />
-        <line x1="19.2" y1="3.8" x2="16.8" y2="6.2" stroke-width="1.6" />
-      </svg>
-      <h3>Accès restreint</h3>
-      <p>Vous devez être connecté pour accéder à votre collection.</p>
+  {#if !isLoggedIn}
+    <div class="not-logged">
+      Connectez-vous pour voir votre collection
     </div>
   {:else}
-    <!-- Filtres -->
-    <div class="filters" role="group" aria-label="Filtrer par statut">
-      {#each filters as filter}
-        <button
-          class="filter-btn"
-          class:active={currentFilter === filter.value}
-          aria-pressed={currentFilter === filter.value}
-          onclick={() => handleFilterChange(filter.value)}
-        >
-          {filter.label}
-        </button>
+    <!-- Filtres par statut -->
+    <div class="filters">
+      <button 
+        class:active={activeFilter === "tous"}
+        onclick={() => setFilter("tous")}
+      >Tous</button>
+      {#each STATUSES as status}
+        <button 
+          class:active={activeFilter === status}
+          onclick={() => setFilter(status)}
+        >{status}</button>
       {/each}
     </div>
 
-    <!-- Chargement -->
     {#if loading}
-      <p class="loading" aria-busy="true">Chargement...</p>
-
-      <!-- Collection vide -->
+      <div class="loading">Chargement...</div>
+    {:else if error}
+      <div class="error">{error}</div>
     {:else if books.length === 0}
-      <div class="empty">
-        <p>Votre collection est vide</p>
-        <a href="/livres" class="link">Parcourir le catalogue</a>
-      </div>
-
-      <!-- Liste des livres -->
+      <p>Votre collection est vide.</p>
     {:else}
       <div class="grid">
         {#each books as book (book.id)}
-          <article class="card-wrapper">
+          <div class="book-card">
             <CardBook {book} />
             <div class="card-actions">
-              <select
-                class="status-select"
+              <select 
                 value={book.collectStatus}
-                onchange={(e) =>
-                  handleStatusChange(book.id, e.currentTarget.value)}
-                aria-label="Changer le statut"
+                onchange={(e) => updateStatus(book.id, e.target.value)}
               >
-                <option value="à lire">À lire</option>
-                <option value="en cours">En cours</option>
-                <option value="lu">Lu</option>
-                <option value="abandonné">Abandonné</option>
-                <option value="en pause">En pause</option>
+                {#each STATUSES as s}
+                  <option value={s}>{s}</option>
+                {/each}
               </select>
-              <button
-                class="remove-btn"
-                onclick={() => handleRemove(book.id)}
-                aria-label="Retirer de la collection"
-              >
-                Retirer
-              </button>
+              <button onclick={() => removeBook(book.id)}>Retirer</button>
             </div>
-          </article>
+          </div>
         {/each}
       </div>
     {/if}
   {/if}
+
+  {#if toast}
+    <div class="toast {toast.type}">{toast.message}</div>
+  {/if}
 </section>
 
-<!-- Toast notification -->
-{#if toast}
-  <div
-    class="toast"
-    class:success={toast.type === "success"}
-    class:error={toast.type === "error"}
-    role="alert"
-    aria-live="polite"
-  >
-    {toast.message}
-  </div>
-{/if}
-
 <style>
-  h2 {
-    text-align: center;
-    margin: 1rem 0;
-    font-size: 1.75rem;
-    color: var(--color-text);
+  .collection {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
   }
 
-  .not-authenticated {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    padding: 3rem 1.5rem;
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    text-align: center;
-  }
-  .not-authenticated svg {
-    opacity: 0.4;
-  }
-  .not-authenticated h3 {
-    margin: 0;
-    font-size: 1.1rem;
-  }
-  .not-authenticated p {
-    margin: 0;
-    opacity: 0.7;
-  }
-
-  /* Filtres */
   .filters {
     display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
     gap: 0.5rem;
-    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 2rem;
   }
 
-  .filter-btn {
-    padding: 0.6rem 1rem;
-    border-radius: var(--radius);
-    border: 2px solid var(--color-secondary);
-    background: transparent;
-    color: var(--color-text);
-    font-family: var(--font-primary);
-    font-size: 0.9rem;
+  .filters button {
+    padding: 0.5rem 1rem;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 20px;
     cursor: pointer;
     transition: all 0.2s;
-    min-height: 44px;
   }
 
-  .filter-btn:hover {
+  .filters button:hover {
+    background: #f5f5f5;
+  }
+
+  .filters button.active {
     background: var(--color-secondary);
+    color: white;
+    border-color: var(--color-secondary);
   }
 
-  .filter-btn.active {
-    background: var(--color-secondary);
-    font-weight: bold;
-  }
-
-  /* Chargement */
-  .loading {
+  .not-logged, .loading, .error {
     text-align: center;
-    padding: 2rem;
-    font-size: 1.1rem;
+    padding: 3rem;
+    font-size: 1.2rem;
   }
 
-  /* Collection vide */
-  .empty {
-    text-align: center;
-    padding: 3rem 1rem;
+  .error {
+    color: #d32f2f;
   }
 
-  .empty p {
-    font-size: 1.1rem;
-    margin-bottom: 1rem;
-  }
-
-  .link {
-    color: var(--color-secondary);
-    text-decoration: underline;
-    font-weight: 600;
-  }
-
-  /* Grille */
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    max-width: 1400px;
-    margin: 20px auto;
-    gap: 1em 0.5em;
-    padding: 0 20px;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 20px;
   }
 
-  .card-wrapper {
+  .book-card {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    width: 100%;
-  }
-
-  .card-wrapper :global(a),
-  .card-wrapper :global(.card) {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
   }
 
   .card-actions {
     display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    padding: 0.5rem;
-    background: white;
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
+    gap: 0.5rem;
+    flex-wrap: wrap;
   }
 
-  .status-select {
+  .card-actions select {
+    flex: 1;
     padding: 0.5rem;
-    border-radius: var(--radius);
     border: 1px solid #ddd;
-    background: white;
-    font-family: var(--font-primary);
-    font-size: 0.85rem;
-    color: var(--color-text);
-    cursor: pointer;
+    border-radius: 6px;
   }
 
-  .status-select:focus {
-    outline: none;
-    border-color: var(--color-secondary);
-  }
-
-  .remove-btn {
-    padding: 0.4rem 0.8rem;
-    border-radius: var(--radius);
-    border: 1px solid #dc3545;
+  .card-actions button {
+    padding: 0.5rem 1rem;
+    border: 1px solid #f44336;
     background: transparent;
-    color: #dc3545;
-    font-family: var(--font-primary);
-    font-size: 0.8rem;
+    color: #f44336;
+    border-radius: 6px;
     cursor: pointer;
-    transition: all 0.2s;
-    min-height: 36px;
   }
 
-  .remove-btn:hover {
-    background: #dc3545;
+  .card-actions button:hover {
+    background: #f44336;
     color: white;
   }
 
-  /* Toast */
   .toast {
     position: fixed;
-    top: 80px;
-    left: 50%;
-    transform: translateX(-50%);
+    bottom: 2rem;
+    right: 2rem;
     padding: 1rem 1.5rem;
-    border-radius: var(--radius);
-    font-family: var(--font-primary);
-    font-size: 0.95rem;
-    z-index: 1000;
-    animation: slideDown 0.3s ease;
+    border-radius: 8px;
+    color: white;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
   }
 
-  .toast.success {
-    background: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
-  }
+  .toast.success { background: #4caf50; }
+  .toast.error { background: #f44336; }
 
-  .toast.error {
-    background: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
-  }
-
-  @keyframes slideDown {
-    from {
-      opacity: 0;
-      transform: translateX(-50%) translateY(-10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-  }
-
-  @media (max-width: 1500px) {
-    .grid {
-      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-      max-width: 1000px;
-    }
-    .filter-btn {
-      padding: 0.5rem 1rem;
-      font-size: 0.8rem;
-      min-height: 30px;
-    }
-  }
-
-  @media (max-width: 1000px) {
-    .grid {
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      max-width: 700px;
-    }
-    .status-select {
-      padding: 0.5rem;
-      font-size: 0.8rem;
-    }
-  }
-
-  @media (max-width: 700px) {
+  @media (max-width: 768px) {
     .grid {
       grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-      max-width: 500px;
-    }
-    .filter-btn {
-      padding: 0.5rem 1rem;
-      font-size: 0.7rem;
-      min-height: 30px;
-    }
-    .remove-btn {
-      padding: 0.4rem 0.6rem;
-      font-size: 0.75rem;
-      min-height: 30px;
-    }
-  }
-  @media (max-width: 480px) {
-    .grid {
-      grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-      max-width: 300px;
+      gap: 15px;
     }
   }
 </style>

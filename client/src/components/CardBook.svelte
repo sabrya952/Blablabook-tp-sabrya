@@ -22,9 +22,7 @@
           decoding="async"
           class:hidden={!isLoaded}
           onload={() => (isLoaded = true)}
-          onerror={() => {
-            isLoaded = false;
-          }}
+          onerror={() => { book.cover = "/placeholder-book.svg"; isLoaded = true; }}
         />
       </div>
 

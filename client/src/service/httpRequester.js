@@ -20,10 +20,8 @@ async function request(method, endpoint, body) {
   });
 
   if (!response.ok) {
-    console.error(response);
-    throw new Error(
-      `Failed to fetch ${method} ${endpoint}: ${response.statusText}`,
-    );
+    const errorData = await response.json().catch(() => null);
+    throw new Error(errorData?.error || `${response.status} ${response.statusText}`);
   }
 
   // Certaines routes API ne renvoie pas de body (ex: routes DELETE avec retour 204 No Content)

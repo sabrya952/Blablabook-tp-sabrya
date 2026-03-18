@@ -1,210 +1,183 @@
 <script>
+  import { onMount } from "svelte";
   import { api } from "../../service/api.service.js";
-  // Utiliser card de livre
   import CardBook from "../CardBook.svelte";
 
-  // Pour liste des livres affichés
+  // États réactifs avec $state
   let books = $state([]);
-  let currentPage = $state(1);
-  let totalPages = $state(0);
-  // Nombre de livres par page
-  let limit = $state(30);
-  // Ordre de tri des livres
+  let page = $state(1);
+  let totalPages = $state(1);
   let order = $state("A-Z");
-// Effet réactif : remonte en haut de la page et recharge les livres
+  let loading = $state(false);
+  let error = $state(null);
+  const limit = 12;
+
+  // Fonction de chargement des livres
+  async function loadBooks() {
+    loading = true;
+    error = null;
+    try {
+      const res = await api.allBook({ page, limit, order });
+      books = res.books || [];
+      totalPages = res.totalPages ?? 1;
+    } catch (e) {
+      error = "Erreur lors du chargement des livres.";
+    } finally {
+      loading = false;
+    }
+  }
+
+  // Effet réactif : recharger quand page ou order change
   $effect(() => {
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
-    fetchBooks();
+    loadBooks();
   });
-// Récupère les livres depuis l'API
-  async function fetchBooks() {
-    const data = await api.allBook({ page: currentPage, limit, order });
-    books = data.books;
-    totalPages = data.totalPages;
+
+  // Changement de page
+  function changePage(delta) {
+    page += delta;
   }
-  // Réinitialise la pagination lors d'un changement de filtre
-  function handleFilterChange() {
-    currentPage = 1;
+
+  // Changement d'ordre
+  function changeOrder(newOrder) {
+    order = newOrder;
+    page = 1; // Reset page
   }
+
 </script>
 
 <section>
-  <div class="title">
-    <h2>Catalogue</h2>
-  </div>
-  <!-- Sélection de l'ordre de tri -->
-  <div class="controls-top">
-    <div class="group">
-      <select id="order" bind:value={order} onchange={handleFilterChange}>
-        <option value="A-Z">Titre (A-Z)</option>
-        <option value="Z-A">Titre (Z-A)</option>
-      </select>
-    </div>
-    <!-- Sélection du nombre de livres par page -->
-    <div class="group">
-      <select id="pagination" bind:value={limit} onchange={handleFilterChange}>
-        <option value={10}>10</option>
-        <option value={20}>20</option>
-        <option value={30}>30</option>
-        <option value={40}>40</option>
-        <option value={50}>50</option>
-      </select>
-    </div>
-  </div>
-  <!-- Grille d'affichage des livres -->
-  <div class="grid">
-    {#each books as book (book.id)}
-      <CardBook {book} />
-    {/each}
-  </div>
-<!-- Contrôles de pagination -->
+  <h2>Catalogue</h2>
+  <!-- Section tri -->
   <div class="controls">
-    <button onclick={() => currentPage--} disabled={currentPage <= 1}>
-      Précédent
-    </button>
-    <span>Page {currentPage} / {totalPages}</span>
-    <button onclick={() => currentPage++} disabled={currentPage >= totalPages}>
-      Suivant
-    </button>
+    <label>
+      Trier par titre :
+      <select bind:value={order}>
+        <option value="A-Z">A → Z</option>
+        <option value="Z-A">Z → A</option>
+      </select>
+    </label>
   </div>
+
+  <!-- Section chargement -->
+  {#if loading}
+    <div class="loading">Chargement...</div>
+  {:else if error}
+    <div class="error">{error}</div>
+  {:else if books.length === 0}
+    <div class="empty">Aucun livre trouvé.</div>
+  {:else}
+    <!-- Grille des livres -->
+    <div class="grid">
+      {#each books as book}
+        <CardBook {book} />
+      {/each}
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination">
+      <button 
+        onclick={() => changePage(-1)}
+        disabled={page === 1}
+      >
+        Précédent
+      </button>
+      <span>Page {page} / {totalPages}</span>
+      <button 
+        onclick={() => changePage(1)}
+        disabled={page === totalPages}
+      >
+        Suivant
+      </button>
+    </div>
+  {/if}
 </section>
 
 <style>
-  .title {
-    display: flex;
-    justify-content: center;
-  }
-  h2 {
-    margin: 1em 1em 0 1em;
-    font-size: 2rem;
-    border-radius: 15px;
-    background-color: var(--color-white);
-    box-shadow: var(--shadow);
-    width: fit-content;
-    padding: 1rem 2rem;
-  }
-
-  select {
-    color: var(--color-text);
-    border: none;
-    box-shadow: var(--shadow-btn);
-    background: var(--color-secondary);
-    border-radius: var(--radius);
-    padding: 0.4rem 2rem 0.4rem 0.75rem;
-    font-family: var(--font-primary);
-    font-size: 0.9rem;
-    cursor: pointer;
-    appearance: none;
-    -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 0.6rem center;
-  }
-
-  select:focus {
-    outline: 2px solid var(--color-secondary);
-    outline-offset: 2px;
-  }
-
-  .group {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .controls-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.75em;
-    margin: 1em 2em;
-  }
-
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  section {
     max-width: 1400px;
-    margin: 20px auto;
-    gap: 1em 0.5em;
-    justify-items: center;
-    padding: 0 20px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
   }
 
+  /* Contrôles de tri */
   .controls {
     display: flex;
-    justify-content: space-around;
+    justify-content: flex-end;
+    margin-bottom: 2rem;
+  }
+
+  .controls label {
+    display: flex;
     align-items: center;
-    padding: 20px 0;
+    gap: 0.5rem;
+    font-weight: 500;
   }
 
-  button {
+  .controls select {
     padding: 0.5rem 1rem;
-    border-radius: var(--radius);
-    cursor: pointer;
-    background: var(--color-secondary);
-    border: none;
-    color: var(--color-text);
-    box-shadow: var(--shadow-btn);
-    transition:
-      box-shadow 0.15s ease,
-      transform 0.15s ease;
-  }
-  button:hover {
-    box-shadow:
-      0 4px 8px rgba(0, 0, 0, 0.25),
-      inset 0 1px 0 rgba(255, 255, 255, 0.15);
-    transform: translateY(-1px);
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: white;
   }
 
-  button:disabled {
+  /* États spéciaux */
+  .loading, .error, .empty {
+    text-align: center;
+    padding: 3rem;
+    font-size: 1.1rem;
+  }
+
+  .error {
+    color: #d32f2f;
+  }
+
+  /* Grille responsive */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 20px;
+    margin-bottom: 2rem;
+  }
+
+  /* Pagination */
+  .pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .pagination button {
+    padding: 0.75rem 1.5rem;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .pagination button:hover:not(:disabled) {
+    background: #f5f5f5;
+  }
+
+  .pagination button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
-  span {
-    font-weight: bold;
-  }
-/* ── Responsive ── */
-  @media (max-width: 1500px) {
+  @media (max-width: 768px) {
     .grid {
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
       gap: 15px;
-      width: 90%;
-    }
-    h2 {
-      font-size: 1.8rem;
-    }
-  }
-
-  @media (max-width: 840px) {
-    .grid {
-      grid-template-columns: repeat(3, 1fr);
-      gap: 15px;
-      width: 90%;
-    }
-    h2 {
-      font-size: 1.6rem;
-    }
-  }
-
-  @media (max-width: 480px) {
-    .controls-top {
-      margin: 1em;
-      justify-content: center;
     }
 
-    .grid {
-      grid-template-columns: repeat(2, 1fr);
-      gap: 8px;
-      width: 95%;
-      padding: 0 8px;
+    .pagination {
+      gap: 0.5rem;
     }
-    h2 {
-      font-size: 1.4rem;
+
+    .pagination button {
+      padding: 0.5rem 1rem;
+      font-size: 0.9rem;
     }
   }
 </style>

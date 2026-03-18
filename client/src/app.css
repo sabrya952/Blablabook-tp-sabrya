@@ -24,7 +24,7 @@ html {
 
 @font-face {
   font-family: "Beautifuly Delicious";
-  src: url("/fonts/myfont.woff2") format("woff2");
+  src: url("/fonts/BDSans-Regular.woff2") format("woff2");
   font-weight: normal;
   font-style: normal;
   font-display: swap;

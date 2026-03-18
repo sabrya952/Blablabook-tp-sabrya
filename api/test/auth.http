@@ -19,7 +19,7 @@ Content-Type: application/json
 
 {
   "email": "test@test.com",
-  "password": "test123456"
+"password": "Test123456"
 }
 ### POST /user/me
 

@@ -1,24 +1,23 @@
 <script>
   import { api } from "../service/api.service.js";
 
-  export let isLogin = true;
-  export let onSuccess;
+let { isLogin = true, onSuccess } = $props();
 // Des infomations pour connecter
-  let email = "";
-  let password = "";
-  let name = "";
-  let confirm = "";
-  let loading = false;
-  let showPassword = false;
-  let showConfirm = false;
+  let email = $state("");
+  let password = $state("");
+  let name = $state("");
+  let confirm = $state("");
+  let loading = $state(false);
+  let showPassword = $state(false);
+  let showConfirm = $state(false);
 // État pour la notification (toast)
-  let toast = null;
+  let toast = $state(null);
   let toastTimeout = null;
 // Vérifications de mot de passe réactives 
-  $: hasMinLength = password.length >= 8;
-  $: hasUppercase = /[A-Z]/.test(password);
-  $: hasLowercase = /[a-z]/.test(password);
-  $: hasDigit = /[0-9]/.test(password);
+let hasMinLength = $derived(password.length >= 8);
+  let hasUppercase = $derived(/[A-Z]/.test(password));
+  let hasLowercase = $derived(/[a-z]/.test(password));
+  let hasDigit = $derived(/[0-9]/.test(password));
 // Affiche une notification temporaire (toast)
   function showToast(message, type) {
     if (toastTimeout) clearTimeout(toastTimeout);

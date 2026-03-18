@@ -1,379 +1,275 @@
 <script>
-  import { onMount } from "svelte";
   import { api } from "../../service/api.service.js";
 
-  // Pour page connecté et sans connecté
-  let token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
-  const { params } = $props();
+  // Props Svelte 5
+  let { params } = $props();
 
-  // États Svelte 5
+  // États réactifs
   let book = $state(null);
   let loading = $state(true);
-  let collectionStatus = $state(null); // null = pas dans la collection, sinon = statut
-  let checkingCollection = $state(true);
+  let error = $state(null);
   let toast = $state(null);
-  let toastTimeout = $state(null);
-  let selectedStatus = $state("à lire");
+import { token } from "../../stores/auth.js";
+let isLoggedIn = $state(false);
+$effect(() => {
+  token.subscribe(val => { isLoggedIn = val !== null; });
+});
+  let alreadyInCollection = $state(false);
 
-  // Pour sélection de la statut
-  const statuses = [
-    { value: "à lire", label: "À lire" },
-    { value: "en cours", label: "En cours" },
-    { value: "lu", label: "Lu" },
-    { value: "abandonné", label: "Abandonné" },
-  ];
-  // Récupérer un livre par Id
-  onMount(async () => {
-    await loadBook();
-    if (token) {
-      await checkCollection();
-    } else {
-      checkingCollection = false;
+
+
+
+  // Effet de chargement du livre
+  $effect(() => {
+    if (params.id) {
+      loadBook();
     }
   });
-  // Récupérer sa collection par API
+
+  // Vérifier connexion utilisateur
+
+
+  // Chargement du livre
   async function loadBook() {
+    loading = true;
+    error = null;
     try {
-      loading = true;
-      const data = await api.getBook(params.id);
-      book = data;
-    } catch (error) {
-      showToast("Erreur lors du chargement du livre", "error");
+      book = await api.getBook(params.id);
+    } catch (e) {
+      error = "Livre non trouvé.";
     } finally {
       loading = false;
     }
   }
-  // Gérer un statut du livre
-  async function checkCollection() {
+
+  // Ajout à la collection
+  async function addToCollection() {
     try {
-      checkingCollection = true;
-      const data = await api.getCollection();
-      const found = data.books?.find((b) => b.id === parseInt(params.id));
-      collectionStatus = found?.collectStatus || null;
-    } catch (error) {
-      console.error("Erreur vérification collection:", error);
-    } finally {
-      checkingCollection = false;
+      await api.addToCollection(book.id);
+      alreadyInCollection = true;
+      showToast("Livre ajouté à votre collection !", "success");
+    } catch (err) {
+      if (err.message.includes("409") || err.message.includes("Conflict")) {
+        alreadyInCollection = true;
+        showToast("Déjà dans votre collection.", "info");
+      } else {
+        showToast("Erreur lors de l'ajout.", "error");
+      }
     }
   }
-  // Ajoute le livre à la collection de l'utilisateur
-  async function handleAddToCollection() {
-    try {
-      await api.addToCollection(book.id, selectedStatus);
-      collectionStatus = selectedStatus;
-      showToast("Livre ajouté à votre collection", "success");
-    } catch (error) {
-      showToast("Erreur lors de l'ajout à la collection", "error");
-    }
-  }
-  // Met à jour le statut du livre dans la collection
-  async function handleUpdateStatus() {
-    try {
-      await api.updateCollectionStatus(book.id, selectedStatus);
-      collectionStatus = selectedStatus;
-      showToast("Statut mis à jour", "success");
-    } catch (error) {
-      showToast("Erreur lors de la mise à jour", "error");
-    }
-  }
-  // Supprime le livre de la collection
-  async function handleRemoveFromCollection() {
-    try {
-      await api.removeFromCollection(book.id);
-      collectionStatus = null;
-      showToast("Livre retiré de la collection", "success");
-    } catch (error) {
-      showToast("Erreur lors de la suppression", "error");
-    }
-  }
-  // Affiche une notification temporaire
+
+  // Toast
   function showToast(message, type) {
-    if (toastTimeout) clearTimeout(toastTimeout);
     toast = { message, type };
-    toastTimeout = setTimeout(() => {
+    setTimeout(() => {
       toast = null;
     }, 3000);
   }
+
+  // Retour
+  function goBack() {
+    window.history.back();
+  }
 </script>
 
-<main>
-  <section>
-    <!-- Affiche un message de chargement pendant la récupération des données -->
-    {#if loading || checkingCollection}
-      <p class="loading" aria-busy="true">Chargement...</p>
+<section class="book-detail">
+  <!-- Bouton retour -->
+  <button class="back-btn" onclick={goBack}>← Retour</button>
 
-      <!-- Affiche les informations du livre une fois chargé -->
-    {:else if book}
-      <div class="col-left">
-        <img src={book.cover} alt={`Couverture de ${book.title}`} />
-
-        {#if token}
-          <div class="collection-section">
-            {#if collectionStatus === null}
-              <!-- Sélection du statut avant l'ajout -->
-              <div class="add-to-collection">
-                <label for="status-select">Statut</label>
-                <select id="status-select" bind:value={selectedStatus}>
-                  {#each statuses as status}
-                    <option value={status.value}>{status.label}</option>
-                  {/each}
-                </select>
-                <button onclick={handleAddToCollection}
-                  >Ajouter à ma collection</button
-                >
-              </div>
-            {:else}
-              <!-- Affiche le statut actuel du livre -->
-              <div class="collection-info">
-                <p class="current-status">
-                  <strong>Statut actuel :</strong>
-                  {collectionStatus}
-                </p>
-                <div class="update-status">
-                  <label for="status-update">Changer</label>
-                  <select id="status-update" bind:value={selectedStatus}>
-                    {#each statuses as status}
-                      <option value={status.value}>{status.label}</option>
-                    {/each}
-                  </select>
-                  <button onclick={handleUpdateStatus}>Modifier</button>
-                </div>
-                <button class="remove-btn" onclick={handleRemoveFromCollection}>
-                  Retirer de ma collection
-                </button>
-              </div>
-            {/if}
-          </div>
+  <!-- Contenu principal -->
+  {#if loading}
+    <div class="loading">Chargement...</div>
+  {:else if error}
+    <div class="error">{error}</div>
+  {:else if book}
+    <div class="content">
+      <!-- Image avec skeleton -->
+      <div class="image-section">
+        {#if !book.cover}
+          <div class="skeleton-image"></div>
+        {:else}
+          <img src={book.cover} alt={book.title} />
         {/if}
       </div>
-      <!-- L'infomation d'un livre-->
-      <div class="col-right">
+
+      <!-- Détails -->
+      <div class="details">
         <h1>{book.title}</h1>
-        <div class="meta">
-          <p><strong>Auteur:</strong> {book.author}</p>
-          <p><strong>Année:</strong> {book.publish_year}</p>
-        </div>
-        <div class="description">
-          <h2>Résumé:</h2>
-          <p>{book.description}</p>
-        </div>
+        <p class="author">par {book.author}</p>
+        <p class="year">{book.publish_year}</p>
+        {#if book.description}
+          <div class="description">{book.description}</div>
+        {/if}
+
+        {#if isLoggedIn}
+          <button 
+            class="collection-btn"
+            class:disabled={alreadyInCollection}
+            onclick={addToCollection}
+          >
+            {alreadyInCollection ? "Dans votre collection ✓" : "Ajouter à ma collection"}
+          </button>
+        {/if}
       </div>
-    {:else}
-      <p class="error">Livre non trouvé</p>
-    {/if}
-  </section>
-  <!-- Affiche une notification temporaire (toast) -->
+    </div>
+  {/if}
+
+  <!-- Toast -->
   {#if toast}
-    <div
-      class="toast"
-      class:success={toast.type === "success"}
-      class:error={toast.type === "error"}
-      role="alert"
-      aria-live="polite"
-    >
+    <div class="toast {toast.type}">
       {toast.message}
     </div>
   {/if}
-</main>
+</section>
 
 <style>
-  section {
+  .book-detail {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+  }
+
+  .back-btn {
+    background: none;
+    border: 1px solid #ddd;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-bottom: 2rem;
+  }
+
+  .content {
     display: grid;
-    grid-template-columns: 300px 1fr;
-    gap: 2rem;
-    max-width: 1100px;
-    margin: 2rem auto;
-    padding: 0 1.5rem;
+    grid-template-columns: 1fr 2fr;
+    gap: 3rem;
     align-items: start;
   }
 
-  /* ── Colonne gauche ── */
-  .col-left {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
+  .image-section {
+    width: 300px;
   }
 
-  .col-left img {
-    display: block;
+  .image-section img {
     width: 100%;
-    max-height: 420px;
-    object-fit: contain;
-    border-radius: var(--radius);
+    aspect-ratio: 2 / 3;
+    object-fit: cover;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
   }
 
-  /* ── Colonne droite ── */
-  .col-right {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    background-color: var(--color-white);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 2em;
+  .skeleton-image {
+    width: 100%;
+    aspect-ratio: 2 / 3;
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 12px;
   }
 
-  .col-right h1 {
-    margin: 0;
-    font-size: 1.75rem;
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
   }
 
-  .meta {
-    margin-top: 1rem;
-    padding: 0.75rem 1rem;
-    align-self: flex-start;
-    text-align: start;
+  .details h1 {
+    font-size: 2.5rem;
+    margin: 0 0 1rem;
+    line-height: 1.2;
   }
 
-  .meta p {
-    margin: 0.25rem 0;
+  .author {
+    font-size: 1.3rem;
+    color: #666;
+    margin: 0 0 0.5rem;
+    font-weight: 500;
+  }
+
+  .year {
+    color: #888;
+    margin: 0 0 2rem;
+    font-size: 1.1rem;
   }
 
   .description {
-    padding: 1em;
-    align-self: flex-start;
-    text-align: start;
-    line-height: 1.7;
+    line-height: 1.6;
+    margin: 2rem 0;
   }
 
-  .description h2 {
-    margin: 0 0 0.75rem;
+  .collection-btn {
+    padding: 1rem 2rem;
+    background: #4caf50;
+    color: white;
+    border: none;
+    border-radius: 8px;
     font-size: 1.1rem;
-  }
-  .description p {
-    margin: 0;
-  }
-
-  /* ── Collection ── */
-  .collection-section {
-    padding: 1rem;
-    background: var(--color-white);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-  }
-
-  .add-to-collection,
-  .collection-info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-  .collection-info {
-    gap: 1rem;
-  }
-
-  .add-to-collection label,
-  .update-status label {
-    font-weight: 600;
-    font-size: 0.9rem;
-  }
-
-  .add-to-collection select,
-  .update-status select {
-    padding: 0.5rem;
-    border: 1px solid #ddd;
-    border-radius: var(--radius);
-    font-family: var(--font-primary);
-    font-size: 0.9rem;
-  }
-
-  .add-to-collection select:focus,
-  .update-status select:focus {
-    outline: none;
-    border-color: var(--color-secondary);
-  }
-
-  .add-to-collection button {
-    padding: 0.75rem;
-    font-weight: 600;
-  }
-  .current-status {
-    font-size: 0.95rem;
-    margin: 0;
-  }
-
-  .update-status {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  .update-status button {
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
-  }
-
-  .remove-btn {
-    padding: 0.5rem 1rem;
-    border: 1px solid #dc3545;
-    background: transparent;
-    color: #dc3545;
-    font-size: 0.85rem;
-    border-radius: var(--radius);
     cursor: pointer;
-    transition:
-      background 0.2s,
-      color 0.2s;
-  }
-  .remove-btn:hover {
-    background: #dc3545;
-    color: var(--color-white);
+    transition: all 0.2s;
   }
 
-  /* ── Toast ── */
+  .collection-btn:hover:not(:disabled) {
+    background: #45a049;
+  }
+
+  .collection-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+  }
+
+  .loading, .error {
+    text-align: center;
+    padding: 4rem 2rem;
+    font-size: 1.2rem;
+  }
+
+  .error {
+    color: #d32f2f;
+  }
+
   .toast {
     position: fixed;
-    top: 80px;
-    left: 50%;
-    transform: translateX(-50%);
+    bottom: 2rem;
+    right: 2rem;
     padding: 1rem 1.5rem;
-    border-radius: var(--radius);
-    font-family: var(--font-primary);
-    font-size: 0.95rem;
-    z-index: 1000;
-    white-space: nowrap;
-    animation: slideDown 0.3s ease;
+    border-radius: 8px;
+    color: white;
+    max-width: 350px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   }
 
   .toast.success {
-    background: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
+    background: #4caf50;
   }
+
   .toast.error {
-    background: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
-  }
-/* Animation pour faire apparaître un élément en glissant vers le bas */
-  @keyframes slideDown {
-    from {
-      opacity: 0;
-      transform: translateX(-50%) translateY(-10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
+    background: #f44336;
   }
 
-  .loading,
-  .error {
-    grid-column: 1 / -1;
-    text-align: center;
-    padding: 2rem;
-    font-size: 1.1rem;
+  .toast.info {
+    background: #2196f3;
   }
 
-  /* ── Responsive ── */
-  @media screen and (max-width: 768px) {
-    section {
+  /* Mobile */
+  @media (max-width: 600px) {
+    .content {
       grid-template-columns: 1fr;
-      margin: 1.5rem auto;
-      padding: 0 1rem;
+      gap: 2rem;
     }
-    .col-left img {
-      max-height: 300px;
+
+    .image-section {
+      width: 100%;
+      max-width: 300px;
+      margin: 0 auto;
+    }
+
+    .details h1 {
+      font-size: 2rem;
+    }
+
+    .toast {
+      bottom: 1rem;
+      right: 1rem;
+      left: 1rem;
+      max-width: none;
     }
   }
 </style>
